@@ -1,0 +1,9 @@
+{
+  "sfdc": {
+    "loginurl": "https://login.salesforce.com",
+    "version": "50.0",
+    "user": "mike.ackerman.rr@coastalcloud.us",
+    "password": "*****",
+    "token": "*****"
+  }
+}
