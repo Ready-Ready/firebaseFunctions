@@ -1,6 +1,7 @@
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
-const sf = require('jsforce');
+const salesforce = require('./controllers/salesforce');
+const fsHelper = require('./controllers/firestore');
 admin.initializeApp();
 
 // // Create and Deploy Your First Cloud Functions
@@ -41,71 +42,31 @@ exports.makeUppercase = functions.firestore.document('/messages/{documentId}')
     });
 
 exports.refreshPrograms = functions.https.onRequest(async (req, res) => {
-    const connSF = new sf.Connection({
-        loginUrl: functions.config().sfdc.loginurl
-        , version: functions.config().sfdc.version
-    });
 
-    try{
-        var sfConn = await connSF.login(functions.config().sfdc.user, functions.config().sfdc.password + functions.config().sfdc.token);
-    } catch(err){
-        //return callback('Could not connect to SF', {responses: {results: `badJob for ${body.sfdc.user}`}});
-        console.log('error logging into Salesforce');
-        return res.status(401).send('Error when logging into Salesforce');
-        //console.log(err);
+    const sfQuery = `select id, name, programID__c, program_description__c
+        , Organization_Name__r.name 
+        , (select name, referral_processes__c, referral_contact_name__c, referral_email__c, referral_phone_number__c
+            , website__c, referral_form__c
+            from locations__r limit 1)
+        from program__c`;
+
+    try {
+        programs = await salesforce.query(sfQuery);
+    } catch(err) {
+        return res.status(500).send(err);
     }
 
-    var programs = await connSF.query(`select id, name, programID__c, program_description__c
-            , Organization_Name__r.name 
-            , (select name, referral_processes__c, referral_contact_name__c, referral_email__c, referral_phone_number__c
-                , website__c, referral_form__c
-                from locations__r limit 1)
-            from program__c`
-        , (err, result) => {
-        if(err) {
-            console.log('error in sfdc query:');
-            console.log(err);
-            return null;
-        }
-        return result;
-    });
-
     if(programs){
-        programs.records.forEach(prog => {
-            const objProg = {
-                "name": prog.Name,
-                "externalId": prog.Id,
-                "id":  prog.ProgramID__c,
-                "organizationName": prog.Organization_Name__r.Name,
-                "description": prog.Program_Description__c
-            }
-    
-            if(prog.Locations__r) {
-                objProg.referral = {
-                    "applicationLink": prog.Locations__r.records[0].Referral_Form__c,
-                    "contact": prog.Locations__r.records[0].Referral_Contact_Name__c,
-                    "email": prog.Locations__r.records[0].Referral_Email__c,
-                    "phone": prog.Locations__r.records[0].Referral_Phone_Number__c,
-                    "process": prog.Locations__r.records[0].Referral_Processes__c,
-                    "website":  prog.Locations__r.records[0].Website__c
-                }
-            }
-    
-            admin.firestore().collection('programs').add(objProg);
-        });
+        try {
+            results = await fsHelper.createMany(admin, programs, 'programs');
+        } catch(err) {
+            return res.status(500).send(err);
+        }   
 
-        /*
-        console.log('count of programs:');
-        console.log(programs.records.length);
-        console.log('first record:');
-        console.log(programs.records[0]);
-        console.log('first records location:');
-        console.log(programs.records[0].Locations__r.records);
-        */
-    
-        res.json({result: `${programs.records.length} programs successfully refreshed.`});
+        res.json({result: `${programs.length} programs successfully refreshed.`});
+
     } else {
-        return res.status(500).send('Error in Salesforce query');
+        return res.status(500).send('No programs returned');
     }
 
 });
