@@ -43,7 +43,7 @@ exports.makeUppercase = functions.firestore.document('/messages/{documentId}')
 
 exports.refreshPrograms = functions.https.onRequest(async (req, res) => {
 
-    const sfQuery = `select id, name, programID__c, program_description__c
+    const sfQuery = `select id, name, programID__c, Brief_Program_Desc__c
         , Organization_Name__r.name 
         , (select name, referral_processes__c, referral_contact_name__c, referral_email__c, referral_phone_number__c
             , website__c, referral_form__c
@@ -52,18 +52,21 @@ exports.refreshPrograms = functions.https.onRequest(async (req, res) => {
 
     try {
         programs = await salesforce.query(sfQuery);
+        functions.logger.log("Program query executed in Salesforce", {"programCount": programs.length});
     } catch(err) {
         return res.status(500).send(err);
     }
 
     if(programs){
+        functions.logger.log("About to call FS createMany function", {});
         try {
             results = await fsHelper.createMany(admin, programs, 'programs');
+            //console.log(`result was: ${results}`);
+            functions.logger.log("Firestore refresh finised", {"resultCount": results});
+            res.json({result: `${results} programs successfully refreshed.`});
         } catch(err) {
             return res.status(500).send(err);
         }   
-
-        res.json({result: `${programs.length} programs successfully refreshed.`});
 
     } else {
         return res.status(500).send('No programs returned');
