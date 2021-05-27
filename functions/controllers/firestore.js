@@ -17,29 +17,9 @@ const checkExists = async(admin, doc, collection, externalId) => {
 
 const setProgram = async(admin, prog, collection) => {
     return new Promise(async (resolve, reject) => {
-        const objProg = {
-            "name": prog.Name,
-            "externalId": prog.Id,
-            "id":  prog.ProgramID__c,
-            "description": prog.Brief_Program_Desc__c
-        };
 
-        if(prog.Organization_Name__r){
-            objProg.organizationName = prog.Organization_Name__r.Name;
-        }
-
-        if(prog.Locations__r) {
-            objProg.referral = {
-                "applicationLink": prog.Locations__r.records[0].Referral_Form__c,
-                "contact": prog.Locations__r.records[0].Referral_Contact_Name__c,
-                "email": prog.Locations__r.records[0].Referral_Email__c,
-                "phone": prog.Locations__r.records[0].Referral_Phone_Number__c,
-                "process": prog.Locations__r.records[0].Referral_Processes__c,
-                "website":  prog.Locations__r.records[0].Website__c
-            }
-        }
         try {
-            const result = await admin.firestore().collection(collection).doc(prog.Id).set(objProg, {merge: true});
+            const result = await admin.firestore().collection(collection).doc(prog.id).set(prog, {merge: true});
             resolve('Successfully set Program');
         } catch(err) {
             functions.logger.error('Error in Program Set function');
@@ -49,6 +29,20 @@ const setProgram = async(admin, prog, collection) => {
 }
 
 module.exports = {
+    createOneProgram: async(admin, doc) => {
+        return new Promise(async (resolve, reject) => {
+            setProgram(admin, doc, 'programs')
+            .then((result)=>{
+                functions.logger.log("Finished running createOneProgram", {"resultCount": 1});
+                resolve(1);
+            })
+            .catch(err => {
+                functions.logger.error('error in createOneProgram:');
+                functions.logger.error(err);
+                reject('Error when inserting program to Firestore');
+            })            
+        });
+    },
     createMany: async(admin, docs, collection) => {
         return new Promise(async (resolve, reject) => {
 
