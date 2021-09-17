@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "readyreadyapp"
+    "default": "readyreadyapp",
+    "development": "readyreadyapp-dev",
+    "staging": "readyreadyapp-test"
   }
 }
