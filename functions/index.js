@@ -1,7 +1,9 @@
+const cors = require("cors")({origin: true});
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const salesforce = require('./controllers/salesforce');
 const fsHelper = require('./controllers/firestore');
+const tibco = require('./controllers/tibco');
 const { user } = require("firebase-functions/lib/providers/auth");
 admin.initializeApp();
 
@@ -168,4 +170,18 @@ exports.refreshPrograms = functions.https.onRequest(async (req, res) => {
         return res.status(500).send('No programs returned');
     }
 
+});
+
+exports.getDataBundle = functions.https.onCall(async (data, context) => {
+    //cors(data, context, async () => {
+        functions.logger.log("getDataBundle called from:", {...context.auth.token});
+        try {
+            var bundleData = await tibco.getDataBundle(context.auth.uid, data.affiliateProgram, data.sharedProgram, data.dataBundle);
+        } catch(err) {
+            return {failure: err}
+        }
+        
+        //return {message: `success from getDataBundle for ${context.auth.token.email}`}
+        return bundleData;
+   //});
 });
