@@ -15,6 +15,7 @@ admin.initializeApp();
 //   response.send("Hello from Firebase!");
 // });
 
+/*
 exports.createUserSeeker = functions.auth.user().onCreate( async(user) => {
     functions.logger.log(`The user created:`);
     functions.logger.log(user);
@@ -55,6 +56,7 @@ exports.createUserSeeker = functions.auth.user().onCreate( async(user) => {
     }
     
 });
+*/
 
 // Take the req "body" and post it to the messages of the userSeeker with the "to" email
 // and include a call to action to view the "toProgram" details listing
@@ -173,15 +175,27 @@ exports.refreshPrograms = functions.https.onRequest(async (req, res) => {
 });
 
 exports.getDataBundle = functions.https.onCall(async (data, context) => {
-    //cors(data, context, async () => {
-        functions.logger.log("getDataBundle called from:", {...context.auth.token});
-        try {
-            var bundleData = await tibco.getDataBundle(context.auth.uid, data.affiliateProgram, data.sharedProgram, data.dataBundle);
-        } catch(err) {
-            return {failure: err}
-        }
-        
-        //return {message: `success from getDataBundle for ${context.auth.token.email}`}
-        return bundleData;
-   //});
+
+    functions.logger.log("getDataBundle called");
+    try {
+        var bundleData = await tibco.getDataBundle(context.auth.uid, data.affiliateProgram, data.sharedProgram, data.dataBundle);
+    } catch(err) {
+        return {failure: err}
+    }
+    
+    //return {message: `success from getDataBundle for ${context.auth.token.email}`}
+    return bundleData;
+
+});
+
+exports.postMessageThread = functions.https.onCall(async (data, context) => {
+    functions.logger.log("postMessageThread called");
+    try {
+        var postMessage = await tibco.postMessageThread(admin, context.auth.uid, data.sendTo, data.toProgram, data.message);
+    } catch(err) {
+        functions.logger.error(`failed with err: `, err);
+        return {failure: err}
+    }
+
+    return postMessage;
 });
