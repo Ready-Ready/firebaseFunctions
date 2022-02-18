@@ -25,11 +25,13 @@ exports.denormCareTeam = functions.firestore
       userAPs.forEach(async (ap) => {
         functions.logger.log(`got ap for: ${ap.data().programName}`);
         if(ap.data().careTeamMember){
-          careTeamMembers.push({
-            ...ap.data().careTeamMember,
-            programId: ap.id,
-            programName: ap.data().programName
-          })
+          if(ap.data().careTeamMember.idsGuid !== ''){
+            careTeamMembers.push({
+              ...ap.data().careTeamMember,
+              programId: ap.id,
+              programName: ap.data().programName
+            })
+          }
         }  
       });
       functions.logger.log(`found care team member count: ${careTeamMembers.length}`);
