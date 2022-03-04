@@ -24,14 +24,16 @@ exports.denormCareTeam = functions.firestore
       var userAPs = await admin.firestore().collection('persons').doc(context.params.personId).collection('affiliatedPrograms').get();
       userAPs.forEach(async (ap) => {
         functions.logger.log(`got ap for: ${ap.data().programName}`);
-        if(ap.data().careTeamMember){
-          if(ap.data().careTeamMember.idsGuid !== ''){
-            careTeamMembers.push({
-              ...ap.data().careTeamMember,
-              programId: ap.id,
-              programName: ap.data().programName
-            })
-          }
+        if(ap.data().careTeamMembers){
+          ap.data().careTeamMembers.forEach(ctm => {
+            if(ctm.idsGuid !== ''){
+              careTeamMembers.push({
+                ...ctm,
+                programId: ap.id,
+                programName: ap.data().programName
+              })
+            }
+          })
         }  
       });
       functions.logger.log(`found care team member count: ${careTeamMembers.length}`);
@@ -44,6 +46,7 @@ exports.denormCareTeam = functions.firestore
           .doc(context.params.personId).collection("relatedPersons")
           .doc(careTeamMember.idsGuid)
           .update({
+            id: careTeamMember.idsGuid,
             person: {
               firstName: careTeamMember.firstName,
               lastName: careTeamMember.lastName,
@@ -60,6 +63,7 @@ exports.denormCareTeam = functions.firestore
           .doc(context.params.personId).collection("relatedPersons")
           .doc(careTeamMember.idsGuid)
           .set({
+            id: careTeamMember.idsGuid,
             person: {
               firstName: careTeamMember.firstName,
               lastName: careTeamMember.lastName,
