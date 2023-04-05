@@ -247,6 +247,7 @@ exports.refreshPrograms = functions.https.onRequest(async (req, res) => {
 
 });
 
+/*DELETED DURING MOVE TO BIG QUERY, LOOK IN THE SVELTE CODE NOW FOR THIS FUNCTION SOURCE
 exports.getDataBundle = functions.https.onCall(async (data, context) => {
 
     functions.logger.log("getDataBundle called");
@@ -260,6 +261,7 @@ exports.getDataBundle = functions.https.onCall(async (data, context) => {
     return bundleData;
 
 });
+*/
 
 exports.postMessageThread = functions.https.onCall(async (data, context) => {
     functions.logger.log("postMessageThread called");
