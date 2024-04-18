@@ -19,7 +19,9 @@ const setProgram = async(admin, prog, collection) => {
     return new Promise(async (resolve, reject) => {
 
         try {
-            const result = await admin.firestore().collection(collection).doc(prog.id).set(prog, {merge: true});
+            //MPA (4/18/24): changing Doc ID in Firestore to be AF_Master instead of SF local ID since it is causing problems
+            //with switching between Dev/Test/Prod orgs
+            const result = await admin.firestore().collection(collection).doc(prog.AF_Master_Id__c).set(prog, {merge: true});
             resolve('Successfully set Program');
         } catch(err) {
             functions.logger.error('Error in Program Set function');
