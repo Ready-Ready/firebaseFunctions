@@ -28,6 +28,19 @@ const setProgram = async(admin, prog, collection) => {
     });
 }
 
+const setForm = async(admin, doc, collection, id) => {
+    return new Promise(async (resolve, reject) => {
+
+        try {
+            const result = await admin.firestore().collection(collection).doc(id).set(doc, {merge: true});
+            resolve('Successfully set Program Form');
+        } catch(err) {
+            functions.logger.error('Error in Program Form Set function');
+            reject(err);
+        }        
+    });
+}
+
 module.exports = {
     createOneProgram: async(admin, doc) => {
         return new Promise(async (resolve, reject) => {
@@ -43,6 +56,20 @@ module.exports = {
             })            
         });
     },
+    createOneProgramForm: async(admin, req) => {
+        return new Promise(async (resolve, reject) => {
+            setForm(admin, req.body, `programs/${req.query.program}/forms`, req.query.id)
+            .then((result)=>{
+                functions.logger.log("Finished running createOneProgramForm", {"resultCount": 1});
+                resolve(1);
+            })
+            .catch(err => {
+                functions.logger.error('error in createOneProgramForm:');
+                functions.logger.error(err);
+                reject('Error when inserting program form to Firestore');
+            })            
+        });
+    },    
     createMany: async(admin, docs, collection) => {
         return new Promise(async (resolve, reject) => {
 

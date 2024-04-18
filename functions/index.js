@@ -214,6 +214,17 @@ exports.setProgram = functions.https.onRequest(async (req, res) => {
     }
 });
 
+exports.setProgramForm = functions.https.onRequest(async (req, res) => {
+  try {
+      results = await fsHelper.createOneProgramForm(admin, req);
+          //console.log(`result was: ${results}`);
+          functions.logger.log("Firestore create program form finised", {"resultCount": results});
+          res.json({result: `${results} program form successfully created.`});
+  } catch(err) {
+      return res.status(500).send(err);
+  }
+});
+
 exports.refreshPrograms = functions.https.onRequest(async (req, res) => {
 
     const sfQuery = `select id, name, programID__c, Brief_Program_Desc__c
