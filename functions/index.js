@@ -88,48 +88,6 @@ exports.denormCareTeam = functions.firestore
       })
 
     });
-/*
-exports.createUserSeeker = functions.auth.user().onCreate( async(user) => {
-    functions.logger.log(`The user created:`);
-    functions.logger.log(user);
-    var aryName = [];
-    var firstName = null;
-    var lastName = null;
-    if(user.displayName){
-        aryName = user.displayName.split(" ");
-        firstName = aryName[0]?aryName[0]:null;
-        lastName = aryName[1]?aryName[1]:null;
-    }
-
-    const doc = {
-        "createdByUser": user.uid,
-        "devices": [],
-        "favorite_programs": [],
-        "firstName": firstName,
-        "lastName": lastName
-    }
-    try {
-        const insSeeker = await admin.firestore().collection("userSeekers").doc(user.uid).set(doc);
-        //email-password provider does not have displayName onCreate (it is updated after by FirebaseUI),
-        //so we must go back and get it to update it on the userSeeker record
-        if(!user.displayName){
-            const userRecord = await admin.auth().getUser(user.uid);
-            if(userRecord.displayName){
-                aryName = userRecord.displayName.split(" ");
-                firstName = aryName[0]?aryName[0]:null;
-                lastName = aryName[1]?aryName[1]:null;
-
-                const updSeeker = await admin.firestore().collection("userSeekers").doc(user.uid).update({"firstName": firstName, "lastName": lastName});
-                functions.logger.log('The seeker record was updated for display name on a second pass');
-            }            
-        }
-    } catch(err) {
-        functions.logger.error(`Error creating userSeeker for ${user.displayName}`);
-        functions.logger.log(err);
-    }
-    
-});
-*/
 
 // Take the req "body" and post it to the messages of the userSeeker with the "to" email
 // and include a call to action to view the "toProgram" details listing
@@ -201,6 +159,32 @@ exports.addMessage = functions.https.onRequest(async (req, res) => {
     // Send back a message that we've successfully written the message
     res.json({result: `Message with ID: ${writeResult.id} added.`});
     */
+});
+
+exports.getPrograms = functions.https.onRequest(async (req, res) => {
+  try {
+    results = await fsHelper.getPrograms(admin);
+    functions.logger.log(`Firestore getPrograms finished`, {"resultCount": results.length});
+    res.json({"records": results, "recordCount": results.length});
+  } catch(err) {
+    return res.status(500).send(err);
+  }
+});
+
+exports.deleteProgram = functions.https.onRequest(async (req, res) => {
+  if (req.method !== 'DELETE') {
+    return res.status(405).send('This endpoint only accepts DELETE requests');
+  }
+
+  try {
+    functions.logger.log(`delete program called with id: ${req.query.id}`);
+    //console.dir(req);
+    results = await fsHelper.deleteOneProgram(admin, req.query.id);
+    functions.logger.log(`Firestore delete program finished`, {"resultCount": results});
+    res.json({result: `${results} program successfully deleted.`});
+  } catch(err) {
+    return res.status(500).send(err);
+  }
 });
 
 exports.setProgram = functions.https.onRequest(async (req, res) => {

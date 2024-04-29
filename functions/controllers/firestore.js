@@ -15,6 +15,18 @@ const checkExists = async(admin, doc, collection, externalId) => {
     });
 }
 
+const deleteDoc = async(admin, prog, collection) => {
+    return new Promise(async (resolve, reject) =>{
+        try {
+            const result = await admin.firestore().collection(collection).doc(prog).delete();
+            resolve(`Successfully deleted document from ${collection}`)
+        } catch(err) {
+            functions.logger.error('Error in deleteDoc function');
+            reject(err);
+        }
+    });
+}
+
 const setProgram = async(admin, prog, collection) => {
     return new Promise(async (resolve, reject) => {
 
@@ -44,6 +56,20 @@ const setForm = async(admin, doc, collection, id) => {
 }
 
 module.exports = {
+    deleteOneProgram: async(admin, prog) => {
+        return new Promise(async (resolve, reject) => {
+            deleteDoc(admin, prog, 'programs')
+            .then((result)=> {
+                functions.logger.log("Finished running deleteOneProgram", {"resultCount": 1});
+                resolve(1);
+            })
+            .catch(err => {
+                functions.logger.error('error in deleteOneProgram:');
+                functions.logger.error(err);
+                reject('Error when deleting program in Firestore');
+            })
+        });
+    },
     createOneProgram: async(admin, doc) => {
         return new Promise(async (resolve, reject) => {
             setProgram(admin, doc, 'programs')
@@ -105,6 +131,32 @@ module.exports = {
                 reject('Error when inserting to Firestore');
             });
 
+        });
+    },
+    getPrograms: async(admin) => {
+        return new Promise(async (resolve, reject) => {
+            try{
+                var collectionRef = await admin.firestore().collection("programs");
+                var result = await collectionRef.get();
+                var resultSend = [];
+                for (const doc of result.docs){
+                    resultSend.push(
+                        {
+                            active: doc.data().active,
+                            recordTypeDeveloperName: doc.data().recordTypeDeveloperName,
+                            name: doc.data().name,
+                            AF_Master_Id__c: doc.data().AF_Master_Id__c,
+                            id: doc.data().id,
+                            status: doc.data().status
+                        }
+                    )
+                }
+                resolve(resultSend);
+            } catch(err) {
+                console.log('Error in getProgram function');
+                console.log(err);
+                reject(`Error from getPrograms Firestore function.  Error Name: ${err.name}; Error Message: ${err.message}`);
+            }
         });
     }
 }
