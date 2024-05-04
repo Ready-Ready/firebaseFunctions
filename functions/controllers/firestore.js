@@ -31,9 +31,7 @@ const setProgram = async(admin, prog, collection) => {
     return new Promise(async (resolve, reject) => {
 
         try {
-            //MPA (4/18/24): changing Doc ID in Firestore to be AF_Master instead of SF local ID since it is causing problems
-            //with switching between Dev/Test/Prod orgs
-            const result = await admin.firestore().collection(collection).doc(prog.AF_Master_Id__c).set(prog, {merge: true});
+            const result = await admin.firestore().collection(collection).doc(prog.id).set(prog, {merge: true});
             resolve('Successfully set Program');
         } catch(err) {
             functions.logger.error('Error in Program Set function');
@@ -58,6 +56,7 @@ const setForm = async(admin, doc, collection, id) => {
 module.exports = {
     deleteOneProgram: async(admin, prog) => {
         return new Promise(async (resolve, reject) => {
+            /*
             deleteDoc(admin, prog, 'programs')
             .then((result)=> {
                 functions.logger.log("Finished running deleteOneProgram", {"resultCount": 1});
@@ -67,7 +66,27 @@ module.exports = {
                 functions.logger.error('error in deleteOneProgram:');
                 functions.logger.error(err);
                 reject('Error when deleting program in Firestore');
-            })
+            })*/
+            var curProgram = await admin.firestore().collection("programs").doc(prog).get();
+            functions.logger.info(`found ${curProgram.ref.path} program to delete `);
+            const bulkWriter = admin.firestore().bulkWriter();
+            bulkWriter
+              .onWriteError((error) => {
+                if (
+                  error.failedAttempts < MAX_RETRY_ATTEMPTS
+                ) {
+                  return true;
+                } else {
+                  console.log('Failed delete at document: ', error.documentRef.path);
+                  return false;
+                }
+              });
+              
+            await admin.firestore().recursiveDelete(curProgram.ref.path, bulkWriter);
+            //await curProgram.ref.path.recursiveDelete;
+
+            functions.logger.log("Finished running deleteOneProgram", {"resultCount": 1});
+            resolve(1);      
         });
     },
     createOneProgram: async(admin, doc) => {
