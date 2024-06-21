@@ -1,10 +1,12 @@
 const cors = require("cors")({origin: true});
 const functions = require("firebase-functions");
+//using second gen function for deleteProgram
+const {onRequest} = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 const salesforce = require('./controllers/salesforce');
 const fsHelper = require('./controllers/firestore');
 const tibco = require('./controllers/tibco');
-const { user } = require("firebase-functions/lib/providers/auth");
+//const { user } = require("firebase-functions/lib/providers/auth");
 admin.initializeApp();
 
 // // Create and Deploy Your First Cloud Functions
@@ -171,7 +173,8 @@ exports.getPrograms = functions.https.onRequest(async (req, res) => {
   }
 });
 
-exports.deleteProgram = functions.https.onRequest(async (req, res) => {
+//exports.deleteProgram = functions.https.onRequest(async (req, res) => {
+exports.deleteProgram = onRequest({cors: true}, async (req, res) => {
   if (req.method !== 'DELETE') {
     return res.status(405).send('This endpoint only accepts DELETE requests');
   }

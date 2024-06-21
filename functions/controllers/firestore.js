@@ -1,5 +1,5 @@
 const functions = require("firebase-functions");
-const { error } = require("firebase-functions/lib/logger");
+//const { error } = require("firebase-functions/lib/logger");
 
 const checkExists = async(admin, doc, collection, externalId) => {
     return new Promise(async (resolve, reject) => {
@@ -82,7 +82,7 @@ module.exports = {
                 }
               });
               
-            await admin.firestore().recursiveDelete(curProgram.ref.path, bulkWriter);
+            await admin.firestore().recursiveDelete(curProgram.ref, bulkWriter);
             //await curProgram.ref.path.recursiveDelete;
 
             functions.logger.log("Finished running deleteOneProgram", {"resultCount": 1});
@@ -145,7 +145,7 @@ module.exports = {
             })
             .catch(err => {
                 console.log('error inserting to Firestore');
-                error("Running promises", {"error": err});
+                //error("Running promises", {"error": err});
                 //return res.status(401).send('Error when logging into Salesforce');
                 reject('Error when inserting to Firestore');
             });
