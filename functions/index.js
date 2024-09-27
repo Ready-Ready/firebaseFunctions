@@ -2,6 +2,7 @@ const cors = require("cors")({origin: true});
 const functions = require("firebase-functions");
 //using second gen function for deleteProgram
 const {onRequest} = require("firebase-functions/v2/https");
+const {onDocumentUpdated} = require("firebase-functions/v2/firestore");
 const admin = require("firebase-admin");
 const salesforce = require('./controllers/salesforce');
 const fsHelper = require('./controllers/firestore');
@@ -16,6 +17,21 @@ admin.initializeApp();
 //   functions.logger.info("Hello logs!", {structuredData: true});
 //   response.send("Hello from Firebase!");
 // });
+
+//GEN 1 function - 9/23/24 - replicates the current affiliatedPrograms document to the history sub-collection before it is
+//updated so that we have an audit history.  Implemented as part of the Supervisors on Care Team project.
+//exports.createAffiliatedProgram = onDocumentUpdated("persons/{personId}/affiliatedPrograms/{apId}", async (event) => {
+exports.updateAffiliatedProgram = functions.firestore
+  .document('persons/{personId}/affiliatedPrograms/{apId}')
+  .onUpdate(async (change, context) => {
+  //const oldValue = event.data.before.data();
+  const oldValue = change.before.data();
+  const newHistory = await admin.firestore().collection("persons")
+          .doc(context.params.personId).collection("affiliatedPrograms")
+          .doc(context.params.apId).collection("versions")
+          .doc(new Date().toISOString())
+          .set(oldValue);
+});
 
 exports.denormCareTeam = functions.firestore
     .document('persons/{personId}/affiliatedPrograms/{apId}')
