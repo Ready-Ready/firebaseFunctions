@@ -33,79 +33,79 @@ exports.updateAffiliatedProgram = functions.firestore
           .set(oldValue);
 });
 
-// exports.denormCareTeam = functions.firestore
-//     .document('persons/{personId}/affiliatedPrograms/{apId}')
-//     .onWrite(async (change, context) => {
-//       functions.logger.log(`Got into aP write function`);
-//       var careTeamMembers = [];
-//       functions.logger.log(`finding aps for personId: ${context.params.personId}`);
-//       var userAPs = await admin.firestore().collection('persons').doc(context.params.personId).collection('affiliatedPrograms').get();
-//       userAPs.forEach(async (ap) => {
-//         functions.logger.log(`got ap for: ${ap.data().programName}`);
-//         if(ap.data().careTeamMembers){
-//           ap.data().careTeamMembers.forEach(ctm => {
-//             if(ctm.idsGuid !== ''){
-//               careTeamMembers.push({
-//                 ...ctm,
-//                 programId: ap.id,
-//                 programName: ap.data().programName
-//               })
-//             }
-//           })
-//         }  
-//       });
-//       functions.logger.log(`found care team member count: ${careTeamMembers.length}`);
-//       careTeamMembers.map(async (careTeamMember) => {
-//         const existAP = await admin.firestore().collection("persons")
-//           .doc(context.params.personId).collection("relatedPersons")
-//           .doc(careTeamMember.idsGuid).get();
-//         if(existAP.exists){
-//           const updPerson = await admin.firestore().collection("persons")
-//           .doc(context.params.personId).collection("relatedPersons")
-//           .doc(careTeamMember.idsGuid)
-//           .update({
-//             id: careTeamMember.idsGuid,
-//             person: {
-//               firstName: careTeamMember.firstName,
-//               lastName: careTeamMember.lastName,
-//               email: careTeamMember.email 
-//             },
-//             program: {
-//               id: careTeamMember.programId,
-//               name: careTeamMember.programName
-//             },
-//             relationship: 'care team'
-//           });
-//         } else {
-//           const updPerson = await admin.firestore().collection("persons")
-//           .doc(context.params.personId).collection("relatedPersons")
-//           .doc(careTeamMember.idsGuid)
-//           .set({
-//             id: careTeamMember.idsGuid,
-//             person: {
-//               firstName: careTeamMember.firstName,
-//               lastName: careTeamMember.lastName,
-//               email: careTeamMember.email 
-//             },
-//             program: {
-//               id: careTeamMember.programId,
-//               name: careTeamMember.programName
-//             },
-//             relationship: 'care team'
-//           });          
-//         }
-//       });
-//       // Delete the care team members that no longer are associated
-//       var existCTs = await admin.firestore().collection('persons').doc(context.params.personId).collection('relatedPersons').get();
-//       existCTs.forEach(ct => {
-//         if(ct.data().relationship === 'care team'){
-//           if(careTeamMembers.filter(a => {return a.idsGuid === ct.id}).length == 0){
-//             admin.firestore().collection('persons').doc(context.params.personId).collection('relatedPersons').doc(ct.id).delete();
-//           }
-//         }
-//       })
+exports.denormCareTeam = functions.firestore
+    .document('persons/{personId}/affiliatedPrograms/{apId}')
+    .onWrite(async (change, context) => {
+      functions.logger.log(`Got into aP write function`);
+      var careTeamMembers = [];
+      functions.logger.log(`finding aps for personId: ${context.params.personId}`);
+      var userAPs = await admin.firestore().collection('persons').doc(context.params.personId).collection('affiliatedPrograms').get();
+      userAPs.forEach(async (ap) => {
+        functions.logger.log(`got ap for: ${ap.data().programName}`);
+        if(ap.data().careTeamMembers){
+          ap.data().careTeamMembers.forEach(ctm => {
+            if(ctm.idsGuid !== ''){
+              careTeamMembers.push({
+                ...ctm,
+                programId: ap.id,
+                programName: ap.data().programName
+              })
+            }
+          })
+        }  
+      });
+      functions.logger.log(`found care team member count: ${careTeamMembers.length}`);
+      careTeamMembers.map(async (careTeamMember) => {
+        const existAP = await admin.firestore().collection("persons")
+          .doc(context.params.personId).collection("relatedPersons")
+          .doc(careTeamMember.idsGuid).get();
+        if(existAP.exists){
+          const updPerson = await admin.firestore().collection("persons")
+          .doc(context.params.personId).collection("relatedPersons")
+          .doc(careTeamMember.idsGuid)
+          .update({
+            id: careTeamMember.idsGuid,
+            person: {
+              firstName: careTeamMember.firstName,
+              lastName: careTeamMember.lastName,
+              email: careTeamMember.email 
+            },
+            program: {
+              id: careTeamMember.programId,
+              name: careTeamMember.programName
+            },
+            relationship: 'care team'
+          });
+        } else {
+          const updPerson = await admin.firestore().collection("persons")
+          .doc(context.params.personId).collection("relatedPersons")
+          .doc(careTeamMember.idsGuid)
+          .set({
+            id: careTeamMember.idsGuid,
+            person: {
+              firstName: careTeamMember.firstName,
+              lastName: careTeamMember.lastName,
+              email: careTeamMember.email 
+            },
+            program: {
+              id: careTeamMember.programId,
+              name: careTeamMember.programName
+            },
+            relationship: 'care team'
+          });          
+        }
+      });
+      // Delete the care team members that no longer are associated
+      var existCTs = await admin.firestore().collection('persons').doc(context.params.personId).collection('relatedPersons').get();
+      existCTs.forEach(ct => {
+        if(ct.data().relationship === 'care team'){
+          if(careTeamMembers.filter(a => {return a.idsGuid === ct.id}).length == 0){
+            admin.firestore().collection('persons').doc(context.params.personId).collection('relatedPersons').doc(ct.id).delete();
+          }
+        }
+      })
 
-//     });
+    });
 exports.denormCareTeamClients = functions.firestore
     .document('persons/{personId}/affiliatedPrograms/{apId}')
     .onWrite(async (change, context) => {
