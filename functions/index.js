@@ -106,6 +106,182 @@ exports.denormCareTeam = functions.firestore
       })
 
     });
+exports.denormCareTeamClients = functions.firestore
+    .document('persons/{personId}/affiliatedPrograms/{apId}')
+    .onWrite(async (change, context) => {
+        const personId = context.params.personId;
+        const apId = context.params.apId;
+
+        functions.logger.log(`Triggered on affiliatedProgram write for personId: ${personId}, apId: ${apId}`);
+
+        const beforeData = change.before.exists ? change.before.data() : null;
+        const afterData = change.after.exists ? change.after.data() : null;
+
+        // If the document is deleted, handle cleanup
+        if (!afterData) {
+            functions.logger.log(`Document deleted for personId: ${personId}, apId: ${apId}`);
+            const careTeamMembers = beforeData?.careTeamMembers || [];
+            for (const careTeamMember of careTeamMembers) {
+                if (careTeamMember.idsGuid) {
+                    const careTeamDocRef = admin.firestore().collection('persons').doc(careTeamMember.idsGuid);
+                    const careTeamDoc = await careTeamDocRef.get();
+
+                    if (careTeamDoc.exists) {
+                        const updatedClients = (careTeamDoc.data().clients || []).filter(client => client.id !== personId);
+                        await careTeamDocRef.update({ clients: updatedClients });
+                        functions.logger.log(`Removed client ${personId} from care team member ${careTeamMember.idsGuid}`);
+                    }
+                }
+            }
+            return;
+        }
+
+        // Validate careTeamMembers
+        if (!afterData.careTeamMembers) {
+            functions.logger.log(`No careTeamMembers array found for personId: ${personId}, apId: ${apId}`);
+            return;
+        }
+
+        // Fetch the full person document for PII fields
+        const personDocRef = admin.firestore().collection('persons').doc(personId);
+        const personDoc = await personDocRef.get();
+
+        const personData = personDoc.data();
+
+        const careTeamMembersBefore = beforeData?.careTeamMembers || [];
+        const careTeamMembersAfter = afterData.careTeamMembers;
+
+        // Determine added, removed, and potentially updated care team members
+        const addedCareTeamMembers = careTeamMembersAfter.filter(
+            afterMember => !careTeamMembersBefore.some(beforeMember => beforeMember.idsGuid === afterMember.idsGuid)
+        );
+
+        const removedCareTeamMembers = careTeamMembersBefore.filter(
+            beforeMember => !careTeamMembersAfter.some(afterMember => afterMember.idsGuid === beforeMember.idsGuid)
+        );
+
+        const potentiallyUpdatedCareTeamMembers = careTeamMembersAfter.filter(afterMember => 
+            careTeamMembersBefore.some(beforeMember => beforeMember.idsGuid === afterMember.idsGuid)
+        );
+
+        functions.logger.log(`Added care team members: ${addedCareTeamMembers.map(m => m.idsGuid)}`);
+        functions.logger.log(`Removed care team members: ${removedCareTeamMembers.map(m => m.idsGuid)}`);
+        functions.logger.log(`Potentially updated care team members: ${potentiallyUpdatedCareTeamMembers.map(m => m.idsGuid)}`);
+
+        // Handle added members
+        for (const careTeamMember of addedCareTeamMembers) {
+            if (careTeamMember.idsGuid) {
+                const careTeamDocRef = admin.firestore().collection('persons').doc(careTeamMember.idsGuid);
+                const careTeamDoc = await careTeamDocRef.get();
+
+                if (careTeamDoc.exists) {
+                    const careTeamData = careTeamDoc.data();
+                    const clientsArray = careTeamData.clients || [];
+
+                    const clientData = {
+                        id: personId,
+                        firstName: personData.firstName || null,
+                        lastName: personData.lastName || null,
+                        mobilePhone: personData.mobilePhone || null,
+                        email: personData.email || null,
+                        dob: personData.dob || null,
+                        streetAddress: personData.streetAddress || null,
+                        clientType : personData.type || null
+                    };
+
+                    clientsArray.push(clientData);
+                    await careTeamDocRef.update({ clients: clientsArray });
+                    functions.logger.log(`Added client ${personId} to care team member ${careTeamMember.idsGuid}`);
+                }
+            }
+        }
+
+        // Handle removed members
+        for (const careTeamMember of removedCareTeamMembers) {
+            if (careTeamMember.idsGuid) {
+                const careTeamDocRef = admin.firestore().collection('persons').doc(careTeamMember.idsGuid);
+                const careTeamDoc = await careTeamDocRef.get();
+
+                if (careTeamDoc.exists) {
+                    const updatedClients = (careTeamDoc.data().clients || []).filter(client => client.id !== personId);
+                    await careTeamDocRef.update({ clients: updatedClients });
+                    functions.logger.log(`Removed client ${personId} from care team member ${careTeamMember.idsGuid}`);
+                }
+            }
+        }
+
+        // Handle updated members
+        for (const careTeamMember of potentiallyUpdatedCareTeamMembers) {
+            if (careTeamMember.idsGuid) {
+                const careTeamDocRef = admin.firestore().collection('persons').doc(careTeamMember.idsGuid);
+                const careTeamDoc = await careTeamDocRef.get();
+
+                if (careTeamDoc.exists) {
+                    const careTeamData = careTeamDoc.data();
+                    const clientsArray = careTeamData.clients || [];
+
+                    const clientData = {
+                      id: personId,
+                      firstName: personData.firstName || null,
+                      lastName: personData.lastName || null,
+                      mobilePhone: personData.mobilePhone || null,
+                      email: personData.email || null,
+                      dob: personData.dob || null,
+                      streetAddress: personData.streetAddress || null,
+                      clientType : personData.type || null
+                    };
+
+                    const existingClientIndex = clientsArray.findIndex(client => client.id === personId);
+
+                    if (existingClientIndex !== -1) {
+                        const existingClient = clientsArray[existingClientIndex];
+                        let updated = false;
+
+                        if (existingClient.firstName !== clientData.firstName) {
+                            existingClient.firstName = clientData.firstName;
+                            updated = true;
+                        }
+                        if (existingClient.lastName !== clientData.lastName) {
+                            existingClient.lastName = clientData.lastName;
+                            updated = true;
+                        }
+                        if (existingClient.mobilePhone !== clientData.mobilePhone) {
+                            existingClient.mobilePhone = clientData.mobilePhone;
+                            updated = true;
+                        }
+                        if (existingClient.email !== clientData.email) {
+                            existingClient.email = clientData.email;
+                            updated = true;
+                        }
+                        if (existingClient.dob !== clientData.dob) {
+                            existingClient.dob = clientData.dob;
+                            updated = true;
+                        }
+                        if (existingClient.streetAddress !== clientData.streetAddress) {
+                            existingClient.streetAddress = clientData.streetAddress;
+                            updated = true;
+                        }
+
+                        if (updated) {
+                            clientsArray[existingClientIndex] = existingClient;
+                            functions.logger.log(`Updated client ${personId} for care team member ${careTeamMember.idsGuid}`);
+                        } else {
+                            functions.logger.log(`No changes detected for client ${personId} in care team member ${careTeamMember.idsGuid}`);
+                        }
+                    } else {
+                        clientsArray.push(clientData);
+                        functions.logger.log(`Added new client ${personId} to care team member ${careTeamMember.idsGuid}`);
+                    }
+
+                    await careTeamDocRef.update({ clients: clientsArray });
+                }
+            }
+        }
+
+        functions.logger.log('Finished processing care team members.');
+    });
+
+
 
 // Take the req "body" and post it to the messages of the userSeeker with the "to" email
 // and include a call to action to view the "toProgram" details listing
