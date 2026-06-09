@@ -3,5 +3,13 @@
     "default": "readyreadyapp",
     "development": "readyreadyapp-dev",
     "staging": "readyreadyapp-test"
+  },
+  "targets": {},
+  "etags": {
+    "readyreadyapp-test": {
+      "extensionInstances": {
+        "firestore-algolia-search": "e6ef67de52d3365c45fc773aa416648509a8a88aab77ec06a49d61aab76ffbd1"
+      }
+    }
   }
 }

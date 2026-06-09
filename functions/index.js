@@ -109,6 +109,11 @@ exports.denormCareTeam = functions.firestore
 exports.denormCareTeamClients = functions.firestore
     .document('persons/{personId}/affiliatedPrograms/{apId}')
     .onWrite(async (change, context) => {
+      
+        const formatHTMLDate = (inDate) => {
+            return `${inDate.getFullYear()}-${"0".repeat(2-(inDate.getMonth()+1).toString().length)}${inDate.getMonth()+1}-${"0".repeat(2-(inDate.getDate()+1).toString().length)}${inDate.getDate()}`
+        }      
+
         const personId = context.params.personId;
         const apId = context.params.apId;
 
@@ -184,10 +189,20 @@ exports.denormCareTeamClients = functions.firestore
                         lastName: personData.lastName || null,
                         mobilePhone: personData.mobilePhone || null,
                         email: personData.email || null,
-                        dob: personData.dob || null,
+                        //dob: personData.dob || null,
                         streetAddress: personData.streetAddress || null,
                         clientType : personData.type || null
                     };
+
+                    if(personData.dateOfBirth){
+                        if(typeof(personData.dateOfBirth) != 'string'){
+                          clientData.htmlFormattedDOB = formatHTMLDate(personData.dateOfBirth.toDate());
+                        } else {
+                          clientData.htmlFormattedDOB = null;
+                        }
+                    } else {
+                      clientData.htmlFormattedDOB = null;
+                    }                          
 
                     clientsArray.push(clientData);
                     await careTeamDocRef.update({ clients: clientsArray });
@@ -204,8 +219,13 @@ exports.denormCareTeamClients = functions.firestore
 
                 if (careTeamDoc.exists) {
                     const updatedClients = (careTeamDoc.data().clients || []).filter(client => client.id !== personId);
-                    await careTeamDocRef.update({ clients: updatedClients });
-                    functions.logger.log(`Removed client ${personId} from care team member ${careTeamMember.idsGuid}`);
+                    try{
+                        const updateResult = await careTeamDocRef.update({ clients: updatedClients });
+                        functions.logger.log(`Removed client ${personId} from care team member ${careTeamMember.idsGuid}`);
+                    } catch(err) {
+                        functions.logger.error(`FAILED to remove client ${personId} from care team member ${careTeamMember.idsGuid}`);
+                        functions.logger.error(err);
+                    }
                 }
             }
         }
@@ -226,10 +246,20 @@ exports.denormCareTeamClients = functions.firestore
                       lastName: personData.lastName || null,
                       mobilePhone: personData.mobilePhone || null,
                       email: personData.email || null,
-                      dob: personData.dob || null,
+                      //dob: personData.dob || null,
                       streetAddress: personData.streetAddress || null,
                       clientType : personData.type || null
                     };
+
+                    if(personData.dateOfBirth){
+                        if(typeof(personData.dateOfBirth) != 'string'){
+                          clientData.htmlFormattedDOB = formatHTMLDate(personData.dateOfBirth.toDate());
+                        } else {
+                          clientData.htmlFormattedDOB = null;
+                        }
+                    } else {
+                      clientData.htmlFormattedDOB = null;
+                    }                   
 
                     const existingClientIndex = clientsArray.findIndex(client => client.id === personId);
 

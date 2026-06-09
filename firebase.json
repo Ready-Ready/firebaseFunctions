@@ -19,12 +19,19 @@
     }
   },
   "hosting": {
-    "headers": [ {
-      "source": "**/*",
-      "headers": [ {
-        "key": "Access-Control-Allow-Origin",
-        "value": "*"
-      } ]
-    } ]
+    "headers": [
+      {
+        "source": "**/*",
+        "headers": [
+          {
+            "key": "Access-Control-Allow-Origin",
+            "value": "*"
+          }
+        ]
+      }
+    ]
+  },
+  "extensions": {
+    "firestore-algolia-search": "algolia/firestore-algolia-search@1.2.7"
   }
 }
