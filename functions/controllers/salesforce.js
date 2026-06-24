@@ -2,6 +2,8 @@ const functions = require("firebase-functions");
 const sf = require('jsforce');
 
 module.exports = {
+//*** MPA (6/24/26): No longer used, this was originally for the POC demos
+/*
     query: async(strQuery) => {
         return new Promise(async (resolve, reject) => {
 
@@ -22,21 +24,6 @@ module.exports = {
                 console.log(err);
             }
         
-            /*var queryResults = await connSF.query(strQuery, (err, result) => {
-                if(err) {
-                    console.log('error in sfdc query:');
-                    return reject('Error when running query in Salesforce');
-                    //console.log(err);
-                }
-                connSF.logout((err) => {
-                    if(err) {
-                        functions.logger.error("error when logging out:");
-                        functions.logger.error(err);
-                    }
-                    return result;
-                });
-            });*/       
-
             try {
                 var queryResults = await connSF.query(strQuery);
                 connSF.logout((err) => {
@@ -56,4 +43,5 @@ module.exports = {
 
         });
     }
+*/
 }

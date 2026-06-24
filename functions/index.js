@@ -433,7 +433,8 @@ exports.setProgramForm = functions.https.onRequest(async (req, res) => {
       return res.status(500).send(err);
   }
 });
-
+/*
+*** MPA (6/24/26): No longer used, this was originally for the POC demos
 exports.refreshPrograms = functions.https.onRequest(async (req, res) => {
 
     const sfQuery = `select id, name, programID__c, Brief_Program_Desc__c
@@ -466,7 +467,7 @@ exports.refreshPrograms = functions.https.onRequest(async (req, res) => {
     }
 
 });
-
+*/
 /*DELETED DURING MOVE TO BIG QUERY, LOOK IN THE SVELTE CODE NOW FOR THIS FUNCTION SOURCE
 exports.getDataBundle = functions.https.onCall(async (data, context) => {
 
@@ -482,7 +483,8 @@ exports.getDataBundle = functions.https.onCall(async (data, context) => {
 
 });
 */
-
+/*
+*** MPA (6/24/26): No longer used, this was originally for the POC demos for client/care team messaging
 exports.postMessageThread = functions.https.onCall(async (data, context) => {
     functions.logger.log("postMessageThread called");
     try {
@@ -494,3 +496,4 @@ exports.postMessageThread = functions.https.onCall(async (data, context) => {
 
     return postMessage;
 });
+*/

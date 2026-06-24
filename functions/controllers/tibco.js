@@ -3,6 +3,8 @@ const functions = require("firebase-functions");
 const querystring = require("querystring");
 
 module.exports = {
+    /*
+    *** MPA (6/24/26): No longer used, this was originally for the POC demos for client/care team messaging
     postMessageThread: async(admin, fromPerson, toPerson, toProgram, message) => {
         return new Promise(async (resolve, reject) => {
             const headers = {
@@ -58,7 +60,11 @@ module.exports = {
 
             return resolve(dataResp.data);            
         })
-    },
+    }
+    */
+    /*
+    *** MPA (6/24/26): no longer called, so commenting out to avoid maintenance needs
+    ,
     getDataBundle: async(person, affiliatedProgram, sharedProgram, dataBundle) => {
         return new Promise(async (resolve, reject) => {
             const headers = {
@@ -95,5 +101,5 @@ module.exports = {
 
             return resolve(dataResp.data);
         })
-    }
+    }*/
 }
