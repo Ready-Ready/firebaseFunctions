@@ -106,209 +106,271 @@ exports.denormCareTeam = functions.firestore
       })
 
     });
+/*
+denormCareTeamClients - the purpose of this trigger is to take the careTeam array on each clients affiliatedPrograms document and update
+each care team's persons record to reflect the current care team.  This allows a denormalized copy of each care team's client list on their
+own persons record to help performance of the CPA and avoid scanning the entire persons collection to find who they can see.
+
+This function can generate a lot of actions (adds, updates, removals) and must complete in the Cloud Run Functions set limit of 240 seconds
+Therefore, we are batching up the Firestore update actions as an array of Promises and then executing them all with 1 network round trip.
+Since we submit the array of promises with a Promises.allSettled method, we can evaluate which of the promises were successful and which
+failed.  We can then log the appropriate details of failures to the logs for follow-up and fixing.
+*/
 exports.denormCareTeamClients = functions.firestore
     .document('persons/{personId}/affiliatedPrograms/{apId}')
     .onWrite(async (change, context) => {
-      
-        const formatHTMLDate = (inDate) => {
-            return `${inDate.getFullYear()}-${"0".repeat(2-(inDate.getMonth()+1).toString().length)}${inDate.getMonth()+1}-${"0".repeat(2-(inDate.getDate()+1).toString().length)}${inDate.getDate()}`
-        }      
-
-        const personId = context.params.personId;
-        const apId = context.params.apId;
-
-        functions.logger.log(`Triggered on affiliatedProgram write for personId: ${personId}, apId: ${apId}`);
+        const { personId, apId } = context.params;
+        functions.logger.log(`Triggered for personId: ${personId}, apId: ${apId}`);
 
         const beforeData = change.before.exists ? change.before.data() : null;
         const afterData = change.after.exists ? change.after.data() : null;
 
-        // If the document is deleted, handle cleanup
+        // Safely log stringified arrays for logging (accounting for undefined arrays)
+        const beforeTeamLogged = beforeData?.careTeamMembers ? beforeData.careTeamMembers.map(m => m.idsGuid).join(', ') : '';
+        const afterTeamLogged = afterData?.careTeamMembers ? afterData.careTeamMembers.map(m => m.idsGuid).join(', ') : '';
+        functions.logger.log(`Clients array before update: ${beforeTeamLogged}`);
+        functions.logger.log(`Clients array after update: ${afterTeamLogged}`);
+
+        // Helper to format Date objects to YYYY-MM-DD
+        const formatHTMLDate = (inDate) => {
+            const yyyy = inDate.getFullYear();
+            const mm = String(inDate.getMonth() + 1).padStart(2, '0');
+            const dd = String(inDate.getDate()).padStart(2, '0');
+            return `${yyyy}-${mm}-${dd}`;
+        };
+
+        const db = admin.firestore();
+        const writePromises = [];
+
+        // Helper to push individual operations into our parallel execution queue which eventually will be submitted with
+        // Promises.allSettled.  This allows for consistent success/failure output so we can evaluate the results after
+        // the batch runs and understand what action/document failed.
+        const queueParallelUpdate = (ref, updatedArray, action) => {
+            const promise = ref.update({ clients: updatedArray })
+                .then(() => ({
+                    status: 'success',
+                    path: ref.path,
+                    action
+                }))
+                .catch((err) => ({
+                    status: 'failed',
+                    path: ref.path,
+                    action,
+                    error: err.message
+                }));
+            
+            writePromises.push(promise);
+        };
+
+        // =======================================================
+        // NESTED HELPER FUNCTION - this function reviews all the results of promises batch and properly formatts the reporting into the
+        // error logs.
+        // =======================================================
+        const logDetailedResults = (results) => {
+            let successCount = 0;
+            const failures = [];
+            // functions.logger.log(`final results to log:`);
+            // console.dir(results);
+
+            results.forEach((result) => {
+                if (result.status === 'fulfilled') {
+                    const val = result.value;
+                    if (val.status === 'success') {
+                        successCount++;
+                    } else {
+                        failures.push(val);
+                    }
+                } else if (result.status === 'rejected') {
+                    failures.push({
+                        path: 'Unknown Document Reference',
+                        action: 'unknown',
+                        error: result.reason?.message || 'Rejected promise'
+                    });
+                }
+            });
+
+            functions.logger.log(`✅ Successfully completed ${successCount} parallel care team updates.`);
+
+            if (failures.length > 0) {
+                functions.logger.error(`❌ Failed to update ${failures.length} care team documents!`);
+                failures.forEach(fail => {
+                    functions.logger.error(`[${fail.action.toUpperCase()}] failed on document path: "${fail.path}" | Error: ${fail.error}`);
+                });
+            }
+        };        
+
+        // ==========================================
+        // SCENARIO 1: DOCUMENT DELETION (Cleanup) - when the entire client AP document has been deleted
+        // ==========================================
         if (!afterData) {
-            functions.logger.log(`Document deleted for personId: ${personId}, apId: ${apId}`);
+            functions.logger.log(`Document deleted for personId: ${personId}`);
             const careTeamMembers = beforeData?.careTeamMembers || [];
-            for (const careTeamMember of careTeamMembers) {
-                if (careTeamMember.idsGuid) {
-                    const careTeamDocRef = admin.firestore().collection('persons').doc(careTeamMember.idsGuid);
-                    const careTeamDoc = await careTeamDocRef.get();
+            const validMemberIds = careTeamMembers.map(m => m.idsGuid).filter(Boolean);
 
-                    if (careTeamDoc.exists) {
-                        const updatedClients = (careTeamDoc.data().clients || []).filter(client => client.id !== personId);
-                        await careTeamDocRef.update({ clients: updatedClients });
-                        functions.logger.log(`Removed client ${personId} from care team member ${careTeamMember.idsGuid}`);
+            if (validMemberIds.length === 0) return;
+
+            // Fetch all care team docs in parallel
+            const refs = validMemberIds.map(id => db.collection('persons').doc(id));
+            const snapshots = await db.getAll(...refs);
+
+            snapshots.forEach((docSnap) => {
+                if (docSnap.exists) {
+                    const originalClients = docSnap.data().clients || [];
+                    const updatedClients = originalClients.filter(client => client.id !== personId);
+                    
+                    if (originalClients.length !== updatedClients.length) {
+                        functions.logger.log(`Queueing removal of client ${personId} from care team ${docSnap.id}`);
+                        queueParallelUpdate(docSnap.ref, updatedClients, 'remove');
                     }
                 }
+            });
+
+            if (writePromises.length > 0) {
+                const results = await Promise.allSettled(writePromises);
+                logDetailedResults(results);
             }
+            //If this is only a AP doc deletion, their is nothing else to do, so exit the function
             return;
         }
 
-        // Validate careTeamMembers
-        if (!afterData.careTeamMembers) {
-            functions.logger.log(`No careTeamMembers array found for personId: ${personId}, apId: ${apId}`);
-            return;
-        }
-
-        // Fetch the full person document for PII fields
-        const personDocRef = admin.firestore().collection('persons').doc(personId);
-        const personDoc = await personDocRef.get();
-
-        const personData = personDoc.data();
-
+        // ==========================================
+        // SCENARIO 2: CREATE / UPDATE
+        // ==========================================
         const careTeamMembersBefore = beforeData?.careTeamMembers || [];
-        const careTeamMembersAfter = afterData.careTeamMembers;
+        const careTeamMembersAfter = afterData.careTeamMembers || [];
 
-        // Determine added, removed, and potentially updated care team members
-        const addedCareTeamMembers = careTeamMembersAfter.filter(
-            afterMember => !careTeamMembersBefore.some(beforeMember => beforeMember.idsGuid === afterMember.idsGuid)
-        );
-
-        const removedCareTeamMembers = careTeamMembersBefore.filter(
-            beforeMember => !careTeamMembersAfter.some(afterMember => afterMember.idsGuid === beforeMember.idsGuid)
-        );
-
-        const potentiallyUpdatedCareTeamMembers = careTeamMembersAfter.filter(afterMember => 
-            careTeamMembersBefore.some(beforeMember => beforeMember.idsGuid === afterMember.idsGuid)
-        );
-
-        functions.logger.log(`Added care team members: ${addedCareTeamMembers.map(m => m.idsGuid)}`);
-        functions.logger.log(`Removed care team members: ${removedCareTeamMembers.map(m => m.idsGuid)}`);
-        functions.logger.log(`Potentially updated care team members: ${potentiallyUpdatedCareTeamMembers.map(m => m.idsGuid)}`);
-
-        // Handle added members
-        for (const careTeamMember of addedCareTeamMembers) {
-            if (careTeamMember.idsGuid) {
-                const careTeamDocRef = admin.firestore().collection('persons').doc(careTeamMember.idsGuid);
-                const careTeamDoc = await careTeamDocRef.get();
-
-                if (careTeamDoc.exists) {
-                    const careTeamData = careTeamDoc.data();
-                    const clientsArray = careTeamData.clients || [];
-
-                    const clientData = {
-                        id: personId,
-                        firstName: personData.firstName || null,
-                        lastName: personData.lastName || null,
-                        mobilePhone: personData.mobilePhone || null,
-                        email: personData.email || null,
-                        //dob: personData.dob || null,
-                        streetAddress: personData.streetAddress || null,
-                        clientType : personData.type || null
-                    };
-
-                    if(personData.dateOfBirth){
-                        if(typeof(personData.dateOfBirth) != 'string'){
-                          clientData.htmlFormattedDOB = formatHTMLDate(personData.dateOfBirth.toDate());
-                        } else {
-                          clientData.htmlFormattedDOB = null;
-                        }
-                    } else {
-                      clientData.htmlFormattedDOB = null;
-                    }                          
-
-                    clientsArray.push(clientData);
-                    await careTeamDocRef.update({ clients: clientsArray });
-                    functions.logger.log(`Added client ${personId} to care team member ${careTeamMember.idsGuid}`);
-                }
-            }
+        if (careTeamMembersAfter.length === 0 && careTeamMembersBefore.length === 0) {
+            functions.logger.log(`No careTeamMembers to process.`);
+            return;
         }
 
-        // Handle removed members
-        for (const careTeamMember of removedCareTeamMembers) {
-            if (careTeamMember.idsGuid) {
-                const careTeamDocRef = admin.firestore().collection('persons').doc(careTeamMember.idsGuid);
-                const careTeamDoc = await careTeamDocRef.get();
+        // Find added, removed, and sustained (potentially updated) members
+        // INFO: using the filter(Boolean) is a highly efficient JavaScript shorthand used to extract a list of IDs and instantly
+        // clean up any missing, null, or undefined values.  Since the default is a function that takes in each of the idsGuid values, 
+        // any null, empty or undefinied idsGuid will evaluate to FALSE and be removed with the filter
+        const addedIds = careTeamMembersAfter
+            .filter(afterM => !careTeamMembersBefore.some(beforeM => beforeM.idsGuid === afterM.idsGuid))
+            .map(m => m.idsGuid).filter(Boolean);
 
-                if (careTeamDoc.exists) {
-                    const updatedClients = (careTeamDoc.data().clients || []).filter(client => client.id !== personId);
-                    try{
-                        const updateResult = await careTeamDocRef.update({ clients: updatedClients });
-                        functions.logger.log(`Removed client ${personId} from care team member ${careTeamMember.idsGuid}`);
-                    } catch(err) {
-                        functions.logger.error(`FAILED to remove client ${personId} from care team member ${careTeamMember.idsGuid}`);
-                        functions.logger.error(err);
-                    }
-                }
-            }
+        functions.logger.log(`Number of care team to add ${personId} to their clients array: ${addedIds.length}`);
+        if (addedIds.length > 0) functions.logger.log(addedIds.join(', '));
+
+        const removedIds = careTeamMembersBefore
+            .filter(beforeM => !careTeamMembersAfter.some(afterM => afterM.idsGuid === beforeM.idsGuid))
+            .map(m => m.idsGuid).filter(Boolean);
+
+        functions.logger.log(`Number of care team to REMOVE ${personId} from their clients array: ${removedIds.length}`);
+        if (removedIds.length > 0) functions.logger.log(removedIds.join(', '));
+
+        const sustainedIds = careTeamMembersAfter
+            .filter(afterM => careTeamMembersBefore.some(beforeM => beforeM.idsGuid === afterM.idsGuid))
+            .map(m => m.idsGuid).filter(Boolean);
+
+        functions.logger.log(`Number of care team to SUSTAIN ${personId} on their clients array: ${sustainedIds.length}`);
+        if (sustainedIds.length > 0) functions.logger.log(sustainedIds.join(', '));
+
+        // Gather unique IDs we actually need to read from the DB
+        const uniqueIdsToRead = [...new Set([...addedIds, ...removedIds, ...sustainedIds])];
+        if (uniqueIdsToRead.length === 0) return;
+
+        // Fetch client parent PII and care team PII documents in parallel so we can reference them later when 
+        // denormalizing these attributes onto the Care Team's persons doc clients arreay
+        const personDocRef = db.collection('persons').doc(personId);
+        const targetRefs = uniqueIdsToRead.map(id => db.collection('persons').doc(id));
+
+        const [personDoc, ...careTeamSnapshots] = await db.getAll(personDocRef, ...targetRefs);
+        const personData = personDoc.exists ? personDoc.data() : {};
+
+        // Prepare the standardized client entry payload
+        const clientData = {
+            id: personId,
+            firstName: personData.firstName || null,
+            lastName: personData.lastName || null,
+            mobilePhone: personData.mobilePhone || null,
+            email: personData.email || null,
+            streetAddress: personData.streetAddress || null,
+            clientType: personData.type || null,
+            htmlFormattedDOB: null
+        };
+
+        if (personData.dateOfBirth && typeof personData.dateOfBirth !== 'string') {
+            clientData.htmlFormattedDOB = formatHTMLDate(personData.dateOfBirth.toDate());
         }
 
-        // Handle updated members
-        for (const careTeamMember of potentiallyUpdatedCareTeamMembers) {
-            if (careTeamMember.idsGuid) {
-                const careTeamDocRef = admin.firestore().collection('persons').doc(careTeamMember.idsGuid);
-                const careTeamDoc = await careTeamDocRef.get();
+        // Map Snapshots for easy lookup by document ID
+        const careTeamMap = new Map(careTeamSnapshots.map(snap => [snap.id, snap]));
 
-                if (careTeamDoc.exists) {
-                    const careTeamData = careTeamDoc.data();
-                    const clientsArray = careTeamData.clients || [];
+        // A. Process Removed Members
+        removedIds.forEach(id => {
+            const snap = careTeamMap.get(id);
+            if (snap && snap.exists) {
+                const originalClients = snap.data().clients || [];
+                const filtered = originalClients.filter(c => c.id !== personId);
+                if (originalClients.length !== filtered.length) {
+                    functions.logger.log(`Queueing REMOVE of client ${personId} from care team ${id}`);
+                    queueParallelUpdate(snap.ref, filtered, 'remove');
+                }
+            }
+        });
 
-                    const clientData = {
-                      id: personId,
-                      firstName: personData.firstName || null,
-                      lastName: personData.lastName || null,
-                      mobilePhone: personData.mobilePhone || null,
-                      email: personData.email || null,
-                      //dob: personData.dob || null,
-                      streetAddress: personData.streetAddress || null,
-                      clientType : personData.type || null
-                    };
+        // B. Process Added Members
+        addedIds.forEach(id => {
+            const snap = careTeamMap.get(id);
+            if (snap && snap.exists) {
+                const originalClients = snap.data().clients || [];
+                // Prevent duplicate entries by removing the client we are processing it and re-adding with fresh PII data
+                const filtered = originalClients.filter(c => c.id !== personId);
+                filtered.push(clientData);
+                functions.logger.log(`Queueing ADD of client ${personId} to care team ${id}`);
+                //functions.logger.log(`Care Team being updated:  ${snap.ref}`);
+                //functions.logger.log(`Filtered Data being updated:`);
+                //console.dir(filtered);
+                queueParallelUpdate(snap.ref, filtered, 'add');
+            }
+        });
 
-                    if(personData.dateOfBirth){
-                        if(typeof(personData.dateOfBirth) != 'string'){
-                          clientData.htmlFormattedDOB = formatHTMLDate(personData.dateOfBirth.toDate());
-                        } else {
-                          clientData.htmlFormattedDOB = null;
-                        }
-                    } else {
-                      clientData.htmlFormattedDOB = null;
-                    }                   
+        // C. Process Sustained (Potentially Updated) Members
+        sustainedIds.forEach(id => {
+            const snap = careTeamMap.get(id);
+            if (snap && snap.exists) {
+                const originalClients = snap.data().clients || [];
+                const existingIndex = originalClients.findIndex(c => c.id === personId);
 
-                    const existingClientIndex = clientsArray.findIndex(client => client.id === personId);
+                if (existingIndex !== -1) {
+                    const existingClient = originalClients[existingIndex];
+                    let changed = false;
 
-                    if (existingClientIndex !== -1) {
-                        const existingClient = clientsArray[existingClientIndex];
-                        let updated = false;
-
-                        if (existingClient.firstName !== clientData.firstName) {
-                            existingClient.firstName = clientData.firstName;
-                            updated = true;
+                    // Deep-compare properties that matter to skip wasteful writes
+                    const fieldsToCheck = ['firstName', 'lastName', 'mobilePhone', 'email', 'streetAddress', 'clientType', 'htmlFormattedDOB'];
+                    for (const key of fieldsToCheck) {
+                        if (existingClient[key] !== clientData[key]) {
+                            existingClient[key] = clientData[key];
+                            changed = true;
                         }
-                        if (existingClient.lastName !== clientData.lastName) {
-                            existingClient.lastName = clientData.lastName;
-                            updated = true;
-                        }
-                        if (existingClient.mobilePhone !== clientData.mobilePhone) {
-                            existingClient.mobilePhone = clientData.mobilePhone;
-                            updated = true;
-                        }
-                        if (existingClient.email !== clientData.email) {
-                            existingClient.email = clientData.email;
-                            updated = true;
-                        }
-                        if (existingClient.dob !== clientData.dob) {
-                            existingClient.dob = clientData.dob;
-                            updated = true;
-                        }
-                        if (existingClient.streetAddress !== clientData.streetAddress) {
-                            existingClient.streetAddress = clientData.streetAddress;
-                            updated = true;
-                        }
-
-                        if (updated) {
-                            clientsArray[existingClientIndex] = existingClient;
-                            functions.logger.log(`Updated client ${personId} for care team member ${careTeamMember.idsGuid}`);
-                        } else {
-                            functions.logger.log(`No changes detected for client ${personId} in care team member ${careTeamMember.idsGuid}`);
-                        }
-                    } else {
-                        clientsArray.push(clientData);
-                        functions.logger.log(`Added new client ${personId} to care team member ${careTeamMember.idsGuid}`);
                     }
 
-                    await careTeamDocRef.update({ clients: clientsArray });
+                    if (changed) {
+                        originalClients[existingIndex] = existingClient;
+                        functions.logger.log(`Queueing UPDATE of client ${personId} on care team ${id}`);
+                        queueParallelUpdate(snap.ref, originalClients, 'update');
+                    }
+                } else {
+                    // Fallback: If they were sustained but somehow missing from the array, append them
+                    originalClients.push(clientData);
+                    functions.logger.log(`Queueing ADD (fallback) of client ${personId} to care team ${id}`);
+                    queueParallelUpdate(snap.ref, originalClients, 'add');
                 }
             }
-        }
+        });
 
-        functions.logger.log('Finished processing care team members.');
+        // Execute all updates concurrently and process results
+        if (writePromises.length > 0) {
+            functions.logger.log(`Executing ${writePromises.length} parallel updates via Promise.allSettled...`);
+            const results = await Promise.allSettled(writePromises);
+            logDetailedResults(results);
+        } else {
+            functions.logger.log('No change in data detected. Skipped writing to database.');
+        }
     });
 
 
