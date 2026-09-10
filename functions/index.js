@@ -44,7 +44,8 @@ exports.denormCareTeam = functions.firestore
         functions.logger.log(`got ap for: ${ap.data().programName}`);
         if(ap.data().careTeamMembers){
           ap.data().careTeamMembers.forEach(ctm => {
-            if(ctm.idsGuid !== ''){
+            //if(ctm.idsGuid !== ''){
+            if(ctm.idsGuid){
               careTeamMembers.push({
                 ...ctm,
                 programId: ap.id,
